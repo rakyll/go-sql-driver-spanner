@@ -7,8 +7,8 @@ import (
 	"log"
 	"database/sql"
 	"runtime/debug"
-	//"fmt"
-	//"reflect"
+	"fmt"
+	"reflect"
 
 	"cloud.google.com/go/spanner"
 
@@ -16,7 +16,7 @@ import (
 	"google.golang.org/grpc"
 	"google.golang.org/api/option"
 	adminapi "cloud.google.com/go/spanner/admin/database/apiv1"
-	//adminpb "google.golang.org/genproto/googleapis/spanner/admin/database/v1"
+	adminpb "google.golang.org/genproto/googleapis/spanner/admin/database/v1"
 
 	_ "github.com/rakyll/go-sql-driver-spanner"
 
@@ -108,11 +108,53 @@ func init(){
 // Executes DDL statements 
 // !!! adminpb/ genproto is an experimenal repo
 // duct tape
-func executeDdlApi(curs *Connector, ddls []string){}
+func executeDdlApi(curs *Connector, ddls []string){
+
+	op, err := curs.adminClient.UpdateDatabaseDdl(curs.ctx, &adminpb.UpdateDatabaseDdlRequest{
+		Database:   dsn,
+		Statements: ddls,
+	})
+	if err != nil {
+		//return nil, err
+		log.Fatal(err)
+	}
+	if err := op.Wait(curs.ctx); err != nil {
+		//return nil, err
+		log.Fatal(err)
+	}
+}
 
  
 // duct tape
-func ExecuteDMLClientLib(dml []string){}
+func ExecuteDMLClientLib(dml []string){
+
+	// open client
+	var db = "projects/"+project+"/instances/"+instance+"/databases/"+dbname;
+	ctx := context.Background()
+	client, err := spanner.NewClient(ctx, db)
+	if err != nil {
+			log.Fatal(err)
+	}
+	defer client.Close()
+
+	// Put strings into spanner.Statement structure
+	var states []spanner.Statement
+	for _,line := range dml {
+		states = append(states, spanner.NewStatement(line))
+	}
+
+	// execute statements
+	_, err = client.ReadWriteTransaction(ctx, func(ctx context.Context, txn *spanner.ReadWriteTransaction) error {
+		stmts := states
+		rowCounts, err := txn.BatchUpdate(ctx, stmts)
+		if err != nil {
+				return err
+		}
+		fmt.Printf("Executed %d SQL statements using Batch DML.\n", len(rowCounts))
+		return nil
+		})
+	if (err != nil) { log.Fatal(err) }
+}
 
 // end client lib funs 
 // ******************* //
@@ -163,7 +205,7 @@ func TestQueryBasic(t *testing.T){
 	ColSubseteQuery(t, db, ctx)
 
 	// clear table 
-	executeDdlApi(curs, []string{`DROP TABLE Testa`})
+	//executeDdlApi(curs, []string{`DROP TABLE Testa`})
 
 	// close connection 
 	curs.Close()
@@ -219,10 +261,65 @@ func ReturnNothingrQuery(t *testing.T, db *sql.DB, ctx context.Context){
 func OneTupleQuery(t *testing.T, db *sql.DB, ctx context.Context){}
 
 // should return two tuples
-func SubsetQuery(t *testing.T, db *sql.DB, ctx context.Context){}
+func SubsetQuery(t *testing.T, db *sql.DB, ctx context.Context){
+
+	want := []testaRow{
+		{A:"a1", B:"b1", C:"c1"},
+		{A:"a2", B:"b2", C:"c2"},
+	}
+	
+	rows, err := db.QueryContext(ctx, "SELECT * FROM Testa WHERE A = \"a1\" OR A = \"a2\"")
+	if err != nil {
+		t.Errorf(err.Error())
+	}
+
+	got := []testaRow{}
+	numRows := 0
+	for rows.Next(){
+		curr := testaRow{A:"", B:"", C:""}
+		if err := rows.Scan(&curr.A, &curr.B, &curr.C); err != nil {
+			t.Error(err.Error())
+		}
+		got = append(got, curr)
+		numRows ++
+	}
+	rows.Close()
+
+	if ! reflect.DeepEqual(want,got) {
+		t.Errorf("Unexpected tuples returned \n got: %#v\nwant: %#v", got, want)
+	}
+}
 
 // should return entire table
-func WholeTableQuery(t *testing.T, db *sql.DB, ctx context.Context){}
+func WholeTableQuery(t *testing.T, db *sql.DB, ctx context.Context){
+
+	want := []testaRow{
+		{A:"a1", B:"b1", C:"c1"},
+		{A:"a2", B:"b2", C:"c2"},
+		{A:"a3", B:"b3", C:"c3"},
+	}
+
+	rows, err := db.QueryContext(ctx, "SELECT * FROM Testa ORDER BY A")
+	if err != nil {
+		t.Errorf(err.Error())
+	}
+
+	got := []testaRow{}
+	numRows := 0
+	for rows.Next(){
+		curr := testaRow{A:"", B:"", C:""}
+		if err := rows.Scan(&curr.A, &curr.B, &curr.C); err != nil {
+			t.Error(err.Error())
+		}
+		got = append(got, curr)
+		numRows ++
+	}
+	rows.Close()
+
+	if ! reflect.DeepEqual(want,got) {
+		t.Errorf("Unexpected tuples returned \n got: %#v\nwant: %#v", got, want)
+	}
+}
 
 // Should return subset of columns
 func ColSubseteQuery(t *testing.T, db *sql.DB, ctx context.Context){}
