@@ -5,6 +5,7 @@
 [Google Cloud Spanner](https://cloud.google.com/spanner) driver for
 Go's [database/sql](https://golang.org/pkg/database/sql/) package.
 
+A Google-supported version of a Go [database/sql](https://golang.org/pkg/database/sql/) package for Cloud Spanner can now be found here: https://github.com/googleapis/go-sql-spanner
 
 THIS IS A WORK-IN-PROGRESS, DON'T USE IT IN PRODUCTION YET.
 
